@@ -23,8 +23,9 @@ four_days_before: dict[int, schedule.Job] = {
     3: schedule.every().sunday,
     4: schedule.every().monday,
     5: schedule.every().tuesday,
-    6: schedule.every().wednesday
+    6: schedule.every().wednesday,
 }
+
 
 def next_weekday(weekday, d: date = date.today()):
     days_ahead = weekday - d.weekday()
@@ -32,16 +33,20 @@ def next_weekday(weekday, d: date = date.today()):
         days_ahead += 7
     return d + timedelta(days_ahead)
 
-def best_available_reservation(priority_list: list[list[int]], court_one: list[int], court_two: list[int]):
+
+def best_available_reservation(
+    priority_list: list[list[int]], court_one: list[int], court_two: list[int]
+):
     for priority in priority_list:
         if all([t in court_one for t in priority]):
             print(f"Reserving times {priority} on court #1")
-            return [(1, t) for t in priority] 
+            return [(1, t) for t in priority]
         elif all([t in court_two for t in priority]):
             print(f"Reserving times {priority} on court #2")
             return [(2, t) for t in priority]
     # no times available
     print("No available times!")
+
 
 def login_and_reserve(day_of_week: int, priority_list: list[tuple]):
     print("Opening website...")
@@ -61,22 +66,28 @@ def login_and_reserve(day_of_week: int, priority_list: list[tuple]):
     submit_button.click()
 
     # choose pickleball member
-    facility_select = Select(WebDriverWait(driver, 30).until(
-        EC.presence_of_element_located((By.ID, "facilitygroup_id"))
-    ))
+    facility_select = Select(
+        WebDriverWait(driver, 30).until(
+            EC.presence_of_element_located((By.ID, "facilitygroup_id"))
+        )
+    )
     facility_select.select_by_visible_text("Pickleball Member")
 
     # go to next thursday
     game_day = next_weekday(weekday=day_of_week)
     year_select = Select(driver.find_element(By.XPATH, "//select[@aria-label='Year']"))
     year_select.select_by_visible_text(str(game_day.year))
-    month_select = Select(driver.find_element(By.XPATH, "//select[@aria-label='Month']"))
+    month_select = Select(
+        driver.find_element(By.XPATH, "//select[@aria-label='Month']")
+    )
     month_select.select_by_visible_text(month_abbr[game_day.month])
     day_select = Select(driver.find_element(By.XPATH, "//select[@aria-label='Day']"))
     day_select.select_by_visible_text(str(game_day.day))
 
     # check availability
-    check_availability_button = driver.find_element(By.XPATH, "//input[@value='Check Availability']")
+    check_availability_button = driver.find_element(
+        By.XPATH, "//input[@value='Check Availability']"
+    )
     check_availability_button.click()
 
     # Enter event name
@@ -92,7 +103,7 @@ def login_and_reserve(day_of_week: int, priority_list: list[tuple]):
     court_two = []
     for input in all_inputs:
         try:
-            court, time = re.findall(r'\d+', input["title"])
+            court, time = re.findall(r"\d+", input["title"])
             if int(court) == 1:
                 court_one.append(int(time))
             else:
@@ -105,9 +116,12 @@ def login_and_reserve(day_of_week: int, priority_list: list[tuple]):
     if best_times:
         for box in best_times:
             box_title = f"Pickleball Court #{box[0]} : {box[1]}pm"
-            box_element = driver.find_element(By.XPATH, f"//input[@title='{box_title}']")
+            box_element = driver.find_element(
+                By.XPATH, f"//input[@title='{box_title}']"
+            )
             box_element.click()
         return driver
+
 
 def finalize_reservation(driver: webdriver.Chrome):
     # calculate charges
@@ -116,7 +130,9 @@ def finalize_reservation(driver: webdriver.Chrome):
 
     # agree to waiver
     waiver_checkbox = WebDriverWait(driver, 30).until(
-        EC.presence_of_element_located((By.XPATH, "//input[@aria-label='Agree to Waiver']"))
+        EC.presence_of_element_located(
+            (By.XPATH, "//input[@aria-label='Agree to Waiver']")
+        )
     )
     waiver_checkbox.click()
 
@@ -153,7 +169,9 @@ def main():
         day_of_reservation = 3
         day_to_schedule = four_days_before[day_of_reservation]
 
-        driver = day_to_schedule.at("06:58:00").do(login_and_reserve, day_of_reservation, priority)
+        driver = day_to_schedule.at("06:58:00").do(
+            login_and_reserve, day_of_reservation, priority
+        )
         if driver:
             day_to_schedule.at("07:00:01").do(finalize_reservation, driver)
 
@@ -163,18 +181,25 @@ def main():
             time_of_next_run = schedule.next_run()
             time_now = datetime.now()
             time_remaining = time_of_next_run - time_now
-            time_left_text = f'Time until execution: ' + str(time_remaining).split('.', 2)[0]
+            time_left_text = (
+                f"Time until execution: " + str(time_remaining).split(".", 2)[0]
+            )
             v.set(time_left_text)
             print(time_left_text)
             root.update()
 
-    button = tk.Button(text="Schedule Reservation", command=make_reservation, bg="white", fg="black")
+    button = tk.Button(
+        text="Schedule Reservation", command=make_reservation, bg="white", fg="black"
+    )
     canvas1.create_window(150, 150, window=button)
 
     label = tk.Label(root, textvariable=v)
     canvas1.create_window(150, 180, window=label)
 
     root.mainloop()
-        
+
+
 if __name__ == "__main__":
-    main()
+    service = webdriver.ChromeService()
+    driver = webdriver.Chrome(service=service)
+    driver.get(URL)
