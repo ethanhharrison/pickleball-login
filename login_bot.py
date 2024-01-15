@@ -9,12 +9,13 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.webdriver import WebDriver
 from datetime import timedelta, date
 from calendar import month_abbr
 
 from config import EMAIL, PASSWORD, EVENT_NAME, CVV
 
-URL = "https://anc.apm.activecommunities.com/cityofhermosabeach/signin?onlineSiteId=0&from_original_cui=true&override_partial_error=False&custom_amount=False&params=aHR0cHM6Ly9hcG0uYWN0aXZlY29tbXVuaXRpZXMuY29tL2NpdHlvZmhlcm1vc2FiZWFjaC9BY3RpdmVOZXRfSG9tZT9GaWxlTmFtZT1vbmxpbmVxdWlja2ZhY2lsaXR5cmVzZXJ2ZS5zZGkmZnVuY3Rpb249b25saW5lcXVpY2tmYWNpbGl0eXJlc2VydmUmYXVpX2NvbG9yX3RoZW1lPXRoZW1lX2JsYWNrJmZ1bmN0aW9uX3RleHQ9VG8gT25saW5lIFF1aWNrIFJlc2VydmF0aW9uJmRheWNhcmVfbWVudV90aXRsZV9sb3dlcj1mbGV4cmVnJmFtc19vcmRlcl9kZXNjcmlwdG9yPUNpdHkgb2YgSGVybW9zYSBCZWFjaCBQYXJrcyBhbmQgUmVjIERlcHQmbXlhY2NvdW50X3JlZGVzaWduX29uX2N1aT1DaGVja2VkJnJubz0yJmFjdGl2aXR5X2xhYmVsX3VuZXNjcGFlX2pzX2FuZF9kZWNvZGVfbWFsX2NoYXI9QWN0aXZpdHkmcmVkZXNpZ25fb25fY3VpX215X2FjY291bnRfdGhyb3VnaF90ZXh0PUFjY2VzcyBNeSBBY2NvdW50JmpzX2Ftc19vcmRlcl9kZXNjcmlwdG9yPUNpdHkgb2YgSGVybW9zYSBCZWFjaCBQYXJrcyBhbmQgUmVjIERlcHQmZm9yX2N1aT1UcnVlJnNkaXJlcWF1dGg9MTcwMjc0NzkwNzYxOSZqc19jYWxlbmRhcnNfbGFiZWw9Q2FsZW5kYXJzJmFjdGl2aXRpZXNfbGFiZWxfbG93ZXJfanM9YWN0aXZpdGllcyZjdWlfY29uc3VtZXI9dHJ1ZSZnaWZ0X2NlcnRpZmljYXRlX2xhYmVsX3VuZXNjYXBlX2pzX2FuZF9kZWNvZGVfbWFsX2NoYXI9R2lmdCBDYXJkJmNhbGVuZGFyc19sYWJlbD1DYWxlbmRhcnMmZnJvbUxvZ2luUGFnZT10cnVl"
+URL = "https://anc.apm.activecommunities.com/cityofhermosabeach/signin?onlineSiteId=0&from_original_cui=true&override_partial_error=False&custom_amount=False&params=aHR0cHM6Ly9hcG0uYWN0aXZlY29tbXVuaXRpZXMuY29tL2NpdHlvZmhlcm1vc2FiZWFjaC9BY3RpdmVOZXRfSG9tZT9GaWxlTmFtZT1hY2NvdW50b3B0aW9ucy5zZGkmZnJvbUxvZ2luUGFnZT10cnVl"
 
 four_days_before: dict[int, schedule.Job] = {
     0: schedule.every().thursday,
@@ -36,125 +37,151 @@ def next_weekday(weekday, d: date = date.today()):
 
 def best_available_reservation(
     priority_list: list[list[int]], court_one: list[int], court_two: list[int]
-):
+) -> tuple[int, list[int]]:
     for priority in priority_list:
         if all([t in court_one for t in priority]):
             print(f"Reserving times {priority} on court #1")
-            return [(1, t) for t in priority]
+            return 1, priority
         elif all([t in court_two for t in priority]):
             print(f"Reserving times {priority} on court #2")
-            return [(2, t) for t in priority]
+            return 2, priority
     # no times available
     print("No available times!")
 
 
-def login_and_reserve(day_of_week: int, priority_list: list[tuple]):
+def open_website() -> WebDriver:
     print("Opening website...")
     service = webdriver.ChromeService()
     driver = webdriver.Chrome(service=service)
     driver.get(URL)
+    return driver
+
+
+def login(driver: WebDriver):
     # enter email
     email_field = driver.find_element(By.XPATH, "//input[@type='text']")
     email_field.send_keys(EMAIL)
-
     # enter password
     password_field = driver.find_element(By.XPATH, "//input[@type='password']")
     password_field.send_keys(PASSWORD)
-
     # submit login info
     submit_button = driver.find_element(By.XPATH, "//button[@type='submit']")
     submit_button.click()
 
-    # choose pickleball member
-    facility_select = Select(
-        WebDriverWait(driver, 30).until(
-            EC.presence_of_element_located((By.ID, "facilitygroup_id"))
+
+def reserve(driver: WebDriver, day_of_week: int, priority_list: list[tuple]):
+    # click reservations button
+    WebDriverWait(driver, 30).until(
+        EC.presence_of_element_located((By.XPATH, "//span[text()='Reservations']"))
+    ).click()
+    # click pickleball button
+    WebDriverWait(driver, 30).until(
+        EC.presence_of_element_located(
+            (By.XPATH, "//a[@aria-label='Pickleball Member']")
         )
-    )
-    facility_select.select_by_visible_text("Pickleball Member")
-
-    # go to next thursday
-    game_day = next_weekday(weekday=day_of_week)
-    year_select = Select(driver.find_element(By.XPATH, "//select[@aria-label='Year']"))
-    year_select.select_by_visible_text(str(game_day.year))
-    month_select = Select(
-        driver.find_element(By.XPATH, "//select[@aria-label='Month']")
-    )
-    month_select.select_by_visible_text(month_abbr[game_day.month])
-    day_select = Select(driver.find_element(By.XPATH, "//select[@aria-label='Day']"))
-    day_select.select_by_visible_text(str(game_day.day))
-
-    # check availability
-    check_availability_button = driver.find_element(
-        By.XPATH, "//input[@value='Check Availability']"
-    )
-    check_availability_button.click()
-
+    ).click()
     # Enter event name
     event_name_field = WebDriverWait(driver, 30).until(
-        EC.presence_of_element_located((By.XPATH, "//input[@aria-label='Event Name']"))
-    )
-    event_name_field.send_keys(EVENT_NAME)
-
-    # Find the available times and get best reservation
-    soup = BeautifulSoup(driver.page_source, "html.parser")
-    all_inputs = soup.find_all(type="checkbox")
-    court_one = []
-    court_two = []
-    for input in all_inputs:
-        try:
-            court, time = re.findall(r"\d+", input["title"])
-            if int(court) == 1:
-                court_one.append(int(time))
-            else:
-                court_two.append(int(time))
-        except KeyError:
-            pass
-    best_times = best_available_reservation(priority_list, court_one, court_two)
-
-    # select the boxes of the best times
-    if best_times:
-        for box in best_times:
-            box_title = f"Pickleball Court #{box[0]} : {box[1]}pm"
-            box_element = driver.find_element(
-                By.XPATH, f"//input[@title='{box_title}']"
-            )
-            box_element.click()
-        return driver
-
-
-def finalize_reservation(driver: webdriver.Chrome):
-    # calculate charges
-    calculate_button = driver.find_element(By.XPATH, "//input[@name='calccharges']")
-    calculate_button.click()
-
-    # agree to waiver
-    waiver_checkbox = WebDriverWait(driver, 30).until(
-        EC.presence_of_element_located(
-            (By.XPATH, "//input[@aria-label='Agree to Waiver']")
+        EC.visibility_of_element_located(
+            (By.XPATH, "//input[@aria-label='Event name']")
         )
     )
-    waiver_checkbox.click()
-
-    # reserve the times
-    reserve_button = WebDriverWait(driver, 30).until(
-        EC.presence_of_element_located((By.XPATH, "//input[@name='reserve']"))
+    event_name_field.click()
+    event_name_field.send_keys(EVENT_NAME)
+    # go to game day
+    game_day = next_weekday(day_of_week)
+    driver.find_element(
+        By.XPATH, "//input[@aria-label='Date picker, current date']"
+    ).click()
+    selected_month = driver.find_element(
+        By.XPATH,
+        "//span[@class='an-calendar-header-title an-calendar-header-title--disabled']",
+    ).text
+    if selected_month != game_day.strftime("%b %Y"):
+        driver.find_element(
+            By.XPATH, "//i[@aria-label='Switch calendar to next month right arrow']"
+        ).click()
+    driver.find_element(
+        By.XPATH,
+        f"//div[text()='18']",
+    ).click()
+    # Find the available times and get best reservation
+    time.sleep(1)
+    soup = BeautifulSoup(driver.page_source, "html.parser")
+    available_cells = soup.find_all(class_="grid-cell")
+    court_times = {1: [], 2: []}
+    for cell in available_cells:
+        aria_label = cell.get("aria-label")
+        if "Available" in aria_label:
+            court, start, end = list(
+                filter(lambda x: x > 0, map(int, re.findall(r"\d+", aria_label)))
+            )
+            court_times[court].append(start)
+    court_number, times = best_available_reservation(
+        priority_list, court_times[1], court_times[2]
     )
-    reserve_button.click()
+    # select the boxes of the best times
+    if times:
+        for t in times:
+            box_label = (
+                f"Pickleball Court #{court_number} {t}:00 AM - {t+1}:00 PM Available"
+            )
+            box_element = driver.find_element(
+                By.XPATH, f"//div[@aria-label='{box_label}']"
+            )
+            box_element.click()
 
-    # add CVV
-    cvv_input = WebDriverWait(driver, 30).until(
-        EC.presence_of_element_located((By.XPATH, "//input[@name='cvv']"))
-    )
-    cvv_input.send_keys(CVV)
 
-    # I am above thirteen
-    thirteen_box = driver.find_element(By.ID, "thirteen")
-    thirteen_box.click()
+def finalize(driver: webdriver.Chrome):
+    # Confirm
+    driver.find_element(
+        By.XPATH, "//button[@data-qa-id='quick-reservation-ok-button']"
+    ).click()
+    # Fill waiver
+    WebDriverWait(driver, 30).until(
+        EC.presence_of_element_located(
+            (
+                By.XPATH,
+                "//input[@data-qa-id='shared-waiver-section-waiver-attachmentCheckbox']",
+            )
+        )
+    ).click()
+    driver.find_element(
+        By.XPATH,
+        "//button[.//span[text()='Save']]",
+    ).click()
+    # Reserve
+    WebDriverWait(driver, 30).until(
+        EC.presence_of_element_located(
+            (
+                By.XPATH,
+                "//button[@data-qa-id='quick-reservation-reserve-button']",
+            )
+        )
+    ).click()
+    WebDriverWait(driver, 30).until(
+        EC.presence_of_element_located(
+            (
+                By.XPATH,
+                "//button[.//span[text()='OK']]",
+            )
+        )
+    ).click()
+    # fill CVV
+    WebDriverWait(driver, 30).until(
+        EC.presence_of_element_located(
+            (
+                By.ID,
+                "form_group_input6__cvv",
+            )
+        )
+    ).send_keys(CVV)
 
-    # Finalize!
-    continue_box = driver.find_element(By.XPATH, "//input[@name='Continue']")
-    continue_box.click()
+    # # add CVV
+    # cvv_input = WebDriverWait(driver, 30).until(
+    #     EC.presence_of_element_located((By.XPATH, "//input[@name='cvv']"))
+    # )
+    # cvv_input.send_keys(CVV)
 
 
 def main():
@@ -200,6 +227,14 @@ def main():
 
 
 if __name__ == "__main__":
-    service = webdriver.ChromeService()
-    driver = webdriver.Chrome(service=service)
-    driver.get(URL)
+    priority = [[3, 4], [2, 3], [7, 8], [11]]
+    day_of_reservation = 3
+
+    driver = open_website()
+    login(driver)
+    time.sleep(2)
+    reserve(driver, day_of_reservation, priority)
+    finalize(driver)
+
+    while True:
+        pass
