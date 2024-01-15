@@ -103,7 +103,7 @@ def reserve(driver: WebDriver, day_of_week: int, priority_list: list[tuple]):
         ).click()
     driver.find_element(
         By.XPATH,
-        f"//div[text()='18']",
+        f"//div[text()='{game_day.day}']",
     ).click()
     # Find the available times and get best reservation
     time.sleep(1)
@@ -117,19 +117,31 @@ def reserve(driver: WebDriver, day_of_week: int, priority_list: list[tuple]):
                 filter(lambda x: x > 0, map(int, re.findall(r"\d+", aria_label)))
             )
             court_times[court].append(start)
-    court_number, times = best_available_reservation(
+    court_and_times = best_available_reservation(
         priority_list, court_times[1], court_times[2]
     )
+
+    if not court_and_times:
+        return False
+
+    court_number, times = court_and_times
+
     # select the boxes of the best times
+    def time_string(t):
+        if t >= 9 and t < 12:
+            return f"{t}:00 AM"
+        else:
+            return f"{t}:00 PM"
+
     if times:
         for t in times:
-            box_label = (
-                f"Pickleball Court #{court_number} {t}:00 AM - {t+1}:00 PM Available"
-            )
+            box_label = f"Pickleball Court #{court_number} {time_string(t)} - {time_string(t+1)} Available"
             box_element = driver.find_element(
                 By.XPATH, f"//div[@aria-label='{box_label}']"
             )
             box_element.click()
+
+    return True
 
 
 def finalize(driver: webdriver.Chrome):
@@ -167,74 +179,58 @@ def finalize(driver: webdriver.Chrome):
             )
         )
     ).click()
+    time.sleep(1)
     # fill CVV
+    cvv_input = WebDriverWait(driver, 30).until(
+        EC.presence_of_element_located(
+            (
+                By.XPATH,
+                "//input[@name='cvv']",
+            )
+        )
+    )
+    cvv_input.click()
+    cvv_input.send_keys(CVV)
     WebDriverWait(driver, 30).until(
         EC.presence_of_element_located(
             (
-                By.ID,
-                "form_group_input6__cvv",
+                By.XPATH,
+                "//button[.//span[text()='Pay']]",
             )
         )
-    ).send_keys(CVV)
-
-    # # add CVV
-    # cvv_input = WebDriverWait(driver, 30).until(
-    #     EC.presence_of_element_located((By.XPATH, "//input[@name='cvv']"))
-    # )
-    # cvv_input.send_keys(CVV)
+    ).click()
 
 
-def main():
-    print("Activated!")
-    root = tk.Tk()
-    v = tk.StringVar()
-    canvas1 = tk.Canvas(root, width=300, height=300)
-    canvas1.pack()
-
-    def make_reservation():
-        priority = [(3, 4), (2, 3)]
-        day_of_reservation = 3
-        day_to_schedule = four_days_before[day_of_reservation]
-
-        driver = day_to_schedule.at("06:58:00").do(
-            login_and_reserve, day_of_reservation, priority
-        )
-        if driver:
-            day_to_schedule.at("07:00:01").do(finalize_reservation, driver)
-
-        while True:
-            schedule.run_pending()
-            time.sleep(1)
-            time_of_next_run = schedule.next_run()
-            time_now = datetime.now()
-            time_remaining = time_of_next_run - time_now
-            time_left_text = (
-                f"Time until execution: " + str(time_remaining).split(".", 2)[0]
-            )
-            v.set(time_left_text)
-            print(time_left_text)
-            root.update()
-
-    button = tk.Button(
-        text="Schedule Reservation", command=make_reservation, bg="white", fg="black"
-    )
-    canvas1.create_window(150, 150, window=button)
-
-    label = tk.Label(root, textvariable=v)
-    canvas1.create_window(150, 180, window=label)
-
-    root.mainloop()
-
-
-if __name__ == "__main__":
-    priority = [[3, 4], [2, 3], [7, 8], [11]]
-    day_of_reservation = 3
-
+def full_reservation(day_of_week, priority_list):
     driver = open_website()
     login(driver)
     time.sleep(2)
-    reserve(driver, day_of_reservation, priority)
-    finalize(driver)
+    successful = reserve(driver, day_of_week, priority_list)
+    if successful:
+        finalize(driver)
 
     while True:
         pass
+
+
+def main():
+    priority = [[3, 4], [2, 3]]
+    day_of_reservation = 4
+    day_to_schedule = four_days_before[day_of_reservation]
+
+    day_to_schedule.at("08:20:00").do(full_reservation, day_of_reservation, priority)
+
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
+        time_of_next_run = schedule.next_run()
+        time_now = datetime.now()
+        time_remaining = time_of_next_run - time_now
+        time_left_text = (
+            f"Time until execution: " + str(time_remaining).split(".", 2)[0]
+        )
+        print(time_left_text)
+
+
+if __name__ == "__main__":
+    main()
